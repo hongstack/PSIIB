@@ -103,11 +103,7 @@ InModuleScope PSIIB {
                 AppRoot  = "$AppRoot"
                 FullPath = "$AppRoot\App1\path\file.msgflow"
                 Depth   = 3
-            });
-
-            It "Extracts valid xmi type" {
-                $FlowCallMatch.XmiType | Should -Be 'path_file.msgflow'
-            }
+            })
 
             It "Detects the flow type" {
                 $FlowCallMatch.IsMessageFlow() | Should -BeTrue
@@ -116,21 +112,39 @@ InModuleScope PSIIB {
             It "Returns the given depth" {
                 $FlowCallMatch.Depth | Should -Be 3
             }
+
+            It "Returns flow call pattern in message flow" {
+                $FlowCallMatch.GetFlowCallPatternInFlow() | Should -Be 'xmi:type="path_file.msgflow'
+            }
         }
 
         Context "RoutineCallMatch class" {
-            $RoutineCallMatch = [RoutineCallMatch]::new(@{
-                AppRoot  = "$AppRoot"
-                FullPath = "$AppRoot\App1\path\file.ext"
-                Routine = 'MyFunc'
-                Line = 'CREATE FUNCTION MyFunc (IN param CHARACTER)'
-                LineNumber = '100'
-            })
-
             It "Returns correct match info" {
+                $RoutineCallMatch = [RoutineCallMatch]::new(@{
+                    AppRoot  = "$AppRoot"
+                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+                    Routine = 'MyFunc'
+                    Line = 'CREATE FUNCTION MyFunc (IN param CHARACTER)'
+                    LineNumber = '100'
+                })
+
                 $RoutineCallMatch.Routine    | Should -Be 'MyFunc'
                 $RoutineCallMatch.Line       | Should -BeLike '*MyFunc*'
                 $RoutineCallMatch.LineNumber | Should -Be 100
+                $RoutineCallMatch.IsMainRoutine() | Should -Be $False
+            }
+
+            It "Returns routine call pattern in message flow" {
+                $RoutineCallMatch = [RoutineCallMatch]::new(@{
+                    AppRoot  = "$AppRoot"
+                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+                    Routine = 'MyModule.Main'
+                    Line = 'CREATE FUNCTION Main () RETURNS BOOLEAN'
+                    LineNumber = '100'
+                })
+
+                $RoutineCallMatch.IsMainRoutine() | Should -Be $True
+                $RoutineCallMatch.GetRoutineCallPatternInFlow() | Should -Be 'esql://routine/rba.app.x#MyModule.Main'
             }
         }
     }
@@ -226,24 +240,34 @@ InModuleScope PSIIB {
 
             New-Item -Path "$AppRoot\APP_X\rba\app\x" -ItemType Directory
             '<projectDescription>',
-            '  <name>APPLIB_X</name>',
+            '  <name>APP_X</name>',
             '  <projects>',
             '    <project>APPLIB_X</project>',
             '	</projects>',
             '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
             'BROKER SCHEMA rba.app.x',
             'DECLARE ... ;',
-            'CREATE PROCEDURE AppExecute() BEGIN',
+            'CREATE DATABASE MODULE Test',
+            'CREATE FUNCTION Main() RETURNS BOOLEAN BEGIN',
             '  CALL Common_Utils();',
-            'END;' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+            '  RETURN TRUE;',
+            'END;',
+            'END MODULE;' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+
+            '<composition>',
+            '  <nodes statement="esql://routine/rba.app.x#Test.Main">',
+            '    <translation any_attributes/>',
+            '  </nodes>',
+            '</composition>' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
 
             $Output = (Get-IIBCallStack -RootName 'Any Name' -Resource 'Shared_Func' 6>&1)
-
-            $Output | Should -HaveCount 16
+            
+            $Output | Should -HaveCount 18
             (-Join $Output[0..3])   | Should -Be 'SHLIB_X\rba\lib\x\SharedLibX.esql:3:CREATE FUNCTION Shared_Func(IN p CHARACTER) RETURNS CHARACTER'
             (-Join $Output[4..7])   | Should -Be '    APPLIB_Y\rba\applib\y\APPLibY.esql:5:SET out = Shared_Func(arg).toUpperCase();'
             (-Join $Output[8..11])  | Should -Be '    APPLIB_X\rba\applib\x\APPLibX.esql:4:CALL Shared_Func(arg);'
-            (-Join $Output[12..15]) | Should -Be '        APP_X\rba\app\x\APP_X.esql:4:CALL Common_Utils();'
+            (-Join $Output[12..15]) | Should -Be '        APP_X\rba\app\x\APP_X.esql:5:CALL Common_Utils();'
+            (-Join $Output[16..18]) | Should -Be '            APP_X\rba\app\x\MF_APP.msgflow'
         }
     }
 

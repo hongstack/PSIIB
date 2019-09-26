@@ -136,14 +136,15 @@ class CallMatch {
 }
 
 class FlowCallMatch : CallMatch {
-    [String]$XmiType
-
-    FlowCallMatch($MatchInfo) : base($MatchInfo) {
-        $this.XmiType = $this.AppPath.Replace($this.AppName, '').SubString(1).Replace('\', '_')
+    FlowCallMatch($MatchInfo) : base($MatchInfo) {}
+	
+	[Boolean] IsMessageFlow() {
+        return $this.FullPath.EndsWith('msgflow')
     }
 
-    [Boolean] IsMessageFlow() {
-        return $this.FullPath.EndsWith('msgflow')
+    [String] GetFlowCallPatternInFlow() {
+        $FileQName = $this.AppPath.Replace($this.AppName, '').SubString(1)
+        return ('xmi:type="{0}' -f ($FileQName.Replace('\', '_')))
     }
 
     [Void] Print() {
@@ -168,6 +169,17 @@ class RoutineCallMatch : CallMatch {
         return $this.Routine.EndsWith('.Main')
     }
 
+    [String] GetRoutineCallPatternInFlow() {
+        $FileQName = $this.AppPath.Replace($this.AppName, '').SubString(1)
+        if ($FileQName.IndexOf('\') -ne -1) {
+            $Package = Split-Path $FileQName -Parent
+            $Package = $Package.Replace('\', '.')
+        } else {
+            $Package = ''
+        }
+        return ('esql://routine/{0}#{1}' -f $Package, $this.Routine)
+    }
+
     [Void] Print() {
         $FileName = Split-Path $this.FullPath -Leaf
         Write-Host ('{0}{1}' -f ('    ' * $this.Depth), $this.AppPath.Replace($FileName,'')) -NoNewline
@@ -178,22 +190,26 @@ class RoutineCallMatch : CallMatch {
 }
 
 function Get-FlowCallStack($FlowName) {
-    $Stack = [Stack[FlowCallMatch]]::new()
-	$Script:APP_LIST.FullName | Get-ChildItem -Recurse -File -Filter "$FlowName" | ForEach-Object {
-        $Stack.Push([FlowCallMatch]::new(@{
-            AppRoot = $Script:APP_ROOT
-            FullPath = $_.FullName
-        }))
-	}
+    $Script:APP_LIST | Get-ChildItem -Recurse -File -Filter "$FlowName" | ForEach-Object {
+        Get-FlowCallStackImpl -FullPath $_.FullName
+    }
+}
 
-	while($Stack.Count -gt 0) {
+function Get-FlowCallStackImpl($FullPath, $Depth) {
+    $Stack = [Stack[FlowCallMatch]]::new()
+    $Stack.Push([FlowCallMatch]::new(@{
+        AppRoot = $Script:APP_ROOT
+        FullPath = $FullPath
+        Depth = $Depth
+    }))
+
+    while($Stack.Count -gt 0) {
 		$Current = $Stack.Pop()
         $Current.Print()
         if ($Current.IsMessageFlow()) { continue }
 
         $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
-		$CallPattern = '<nodes xmi:type="{0}' -f $Current.XmiType
-		$MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $CallPattern -SimpleMatch -List
+		$MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $Current.GetFlowCallPatternInFlow() -SimpleMatch -List
 		for ($i = $MatchedFiles.Count - 1; $i -ge 0; $i--) {
             $Stack.Push([FlowCallMatch]::new(@{
                 AppRoot = $Script:APP_ROOT
@@ -207,7 +223,7 @@ function Get-FlowCallStack($FlowName) {
 function Get-RoutineCallStack($Routine) {
     # TODO: Exclude commented call
     $Stack = [Stack[RoutineCallMatch]]::new()
-    $Script:APP_LIST.FullName | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern "CREATE\s+(FUNCTION|PROCEDURE)\s+$Routine\s*\(" -List | ForEach-Object {
+    $Script:APP_LIST | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern "CREATE\s+(FUNCTION|PROCEDURE)\s+$Routine\s*\(" -List | ForEach-Object {
         $Stack.Push([RoutineCallMatch]::new(@{
             AppRoot = $Script:APP_ROOT
             FullPath = $_.Path
@@ -220,8 +236,14 @@ function Get-RoutineCallStack($Routine) {
     while ($Stack.Count -gt 0) {
         $Current = $Stack.Pop()
         $Current.Print()
-        # TODO: Introduce -Full param to enable further search on flows
-        if ($Current.IsMainRoutine()) { continue } # Stop on Moduel.Main
+        if ($Current.IsMainRoutine()) {
+            $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
+		    $MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $Current.GetRoutineCallPatternInFlow() -SimpleMatch -List
+            foreach ($MatchedFile in $MatchedFiles) {
+                Get-FlowCallStackImpl -FullPath $MatchedFile.Path -Depth ($Current.Depth + 1)
+            }
+            continue
+        }
 
         $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
         $Call_Pattern = '(?<!(FUNCTION|PROCEDURE))\s+{0}\s*\(' -f $Current.Routine
@@ -230,7 +252,7 @@ function Get-RoutineCallStack($Routine) {
             $LineNum = 0
             Get-Content -Path $MatchedFile.Path | ForEach-Object { # Loop each line
                 $LineNum++
-                if ($_ -match "CREATE\s+\w\s+MODULE\s+([\S]*)") { # Module definition
+                if ($_ -match "CREATE\s+\w+\s+MODULE\s+([\S]*)") { # Module definition
                     $CurrentModule = $Matches[1]
                 } elseif ($_ -match "CREATE\s+(FUNCTION|PROCEDURE)\s+([^\s(]+)\s*\(") { # Routine definition
                     $CurrentRoutine = $Matches[2]
