@@ -204,17 +204,17 @@ function Get-FlowCallStackImpl($FullPath, $Depth) {
     }))
 
     while($Stack.Count -gt 0) {
-		$Current = $Stack.Pop()
-        $Current.Print()
-        if ($Current.IsMessageFlow()) { continue }
+		$CM = $Stack.Pop()
+        $CM.Print()
+        if ($CM.IsMessageFlow()) { continue }
 
-        $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
-		$MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $Current.GetFlowCallPatternInFlow() -SimpleMatch -List
+        $AppsToSearch = Get-SearchScope -AppName $CM.AppName
+		$MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $CM.GetFlowCallPatternInFlow() -SimpleMatch -List
 		for ($i = $MatchedFiles.Count - 1; $i -ge 0; $i--) {
             $Stack.Push([FlowCallMatch]::new(@{
                 AppRoot = $Script:APP_ROOT
                 FullPath = $MatchedFiles[$i].Path
-                Depth = $Current.Depth + 1
+                Depth = $CM.Depth + 1
             }))
 		}
 	}
@@ -234,20 +234,20 @@ function Get-RoutineCallStack($Routine) {
     }
 
     while ($Stack.Count -gt 0) {
-        $Current = $Stack.Pop()
-        $Current.Print()
-        if ($Current.IsMainRoutine()) {
-            $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
-		    $MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $Current.GetRoutineCallPatternInFlow() -SimpleMatch -List
+        $CM = $Stack.Pop()
+        $CM.Print()
+        if ($CM.IsMainRoutine()) {
+            $AppsToSearch = Get-SearchScope -AppName $CM.AppName
+		    $MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $CM.GetRoutineCallPatternInFlow() -SimpleMatch -List
             foreach ($MatchedFile in $MatchedFiles) {
-                Get-FlowCallStackImpl -FullPath $MatchedFile.Path -Depth ($Current.Depth + 1)
+                Get-FlowCallStackImpl -FullPath $MatchedFile.Path -Depth ($CM.Depth + 1)
             }
             continue
         }
 
-        $ReferencedApps = Get-ReferencedApps -AppName $Current.AppName | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
-        $Call_Pattern = '(?<!(FUNCTION|PROCEDURE))\s+{0}\s*\(' -f $Current.Routine
-        $MatchedFiles = $ReferencedApps | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern $CALL_PATTERN -List
+        $AppsToSearch = Get-SearchScope -AppName $CM.AppName
+        $Call_Pattern = '(?<!(FUNCTION|PROCEDURE))\s+{0}\s*\(' -f $CM.Routine
+        $MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern $CALL_PATTERN -List
         foreach ($MatchedFile in $MatchedFiles) {
             $LineNum = 0
             Get-Content -Path $MatchedFile.Path | ForEach-Object { # Loop each line
@@ -266,7 +266,7 @@ function Get-RoutineCallStack($Routine) {
                         Routine = $CurrentRoutine # Caller noted
                         Line = $_
                         LineNumber = $LineNum
-                        Depth = $Current.Depth + 1
+                        Depth = $CM.Depth + 1
                     }))
                 }
             }
@@ -274,14 +274,14 @@ function Get-RoutineCallStack($Routine) {
     }
 }
 
-function Get-ReferencedApps($AppName) {
+function Get-SearchScope($AppName) {
     # TODO: Use the existing hashmap and also serve as cache
     $Refs = $Script:LIB_REFS[$AppName]
-    $ReferenceApps = @($AppName)
+    $AppsToSearch = @($AppName)
     if ($null -ne $Refs) {
-        $ReferenceApps += $Refs
+        $AppsToSearch += $Refs
     }
-    return $ReferenceApps
+    $AppsToSearch | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
 }
 
 <#

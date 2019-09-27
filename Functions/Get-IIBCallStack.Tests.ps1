@@ -74,6 +74,32 @@ InModuleScope PSIIB {
                 $Script:LIB_REFS.Values | Select -First 1 | Should -Be 'APP_X'
             }
         }
+
+        Context "SEARCH_SCOPE determination" {
+            $AppRoot = 'C:\fake\dir'
+
+            It "Returns apps/libs to search for the specified app" {
+                Mock Get-AppRoot {$AppRoot}
+                Mock Get-AppList {}
+                Mock Get-LibRefs {
+                    @{
+                        'APPLIB_X' = $($V=[HashSet[String]]::new(); [Void]$V.Add('APP_X'); $V)
+                        'APPLIB_Y' = $($V=[HashSet[String]]::new(); [Void]$V.Add('APP_X'); [Void]$V.Add('APP_Y'); $V)
+                    }
+                }
+
+                Get-IIBCallStack -RootName 'Any Name' -Resource 'Any flow or function name'
+
+                Get-SearchScope APPLIB_X | Should -HaveCount 2
+                Get-SearchScope APPLIB_X | Should -Be @("$AppRoot\APPLIB_X", "$AppRoot\APP_X")
+
+                Get-SearchScope APPLIB_Y | Should -HaveCount 3
+                Get-SearchScope APPLIB_Y | Should -Be @("$AppRoot\APPLIB_Y", "$AppRoot\APP_X", "$AppRoot\APP_Y")
+
+                Get-SearchScope APPLIB_Z | Should -HaveCount 1
+                Get-SearchScope APPLIB_Z | Should -Be @("$AppRoot\APPLIB_Z")
+            }
+        }
     }
 
     Describe "call match class" -Tags ('CallStack', 'CallMatch') {
