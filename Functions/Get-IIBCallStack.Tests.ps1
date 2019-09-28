@@ -145,6 +145,16 @@ InModuleScope PSIIB {
         }
 
         Context "RoutineCallMatch class" {
+            It "Defines module definition pattern" {
+                [RoutineCallMatch]::PTN_MODULE_DEF | Should -BeExactly 'CREATE\s+\w+\s+MODULE\s+([\S]*)'
+            }
+
+            It "Defines rutine definition pattern" {
+                [RoutineCallMatch]::PTN_ROUTINE_DEF | Should -BeExactly 'CREATE\s+(FUNCTION|PROCEDURE)\s+([^\s(]+)\s*\('
+                $RoutineName = 'Any Name'
+                [RoutineCallMatch]::GetRoutineDefPattern($RoutineName) | Should -BeExactly "CREATE\s+(FUNCTION|PROCEDURE)\s+$RoutineName\s*\("
+            }
+            
             It "Returns correct match info" {
                 $RoutineCallMatch = [RoutineCallMatch]::new(@{
                     AppRoot  = "$AppRoot"
@@ -170,7 +180,19 @@ InModuleScope PSIIB {
                 })
 
                 $RoutineCallMatch.IsMainRoutine() | Should -Be $True
-                $RoutineCallMatch.GetRoutineCallPatternInFlow() | Should -Be 'esql://routine/rba.app.x#MyModule.Main'
+                $RoutineCallMatch.GetRoutineCallPatternInFlow() | Should -BeExactly 'esql://routine/rba.app.x#MyModule.Main'
+            }
+
+            It "Returns routine call pattern in routine" {
+                $RoutineCallMatch = [RoutineCallMatch]::new(@{
+                    AppRoot  = "$AppRoot"
+                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+                    Routine = 'MyFunc'
+                    Line = 'CREATE FUNCTION MyFunc (IN param CHARACTER)'
+                    LineNumber = '100'
+                })
+
+                $RoutineCallMatch.GetRoutineCallPatternInRoutine() | Should -BeExactly '(?<!(FUNCTION|PROCEDURE))\s+MyFunc\s*\('
             }
         }
     }
@@ -323,10 +345,12 @@ InModuleScope PSIIB {
 
             Mock Get-ModuleConfigPath { $ConfigPath }
 
-            $AllPaths = Get-IIBRoot -All
-            $AllPaths | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name | Should -Be @('App1', 'App2')
-            $AllPaths.App1 | Should -Be 'C:\Dev\App1'
-            $AllPaths.App2 | Should -Be 'C:\Dev\App2'
+            $ProjectRoots = Get-IIBRoot -All
+            $ProjectRoots | Should -HaveCount 2
+            $ProjectRoots[0].RootName | Should -Be 'App1'
+            $ProjectRoots[0].RootPath | Should -Be 'C:\Dev\App1'
+            $ProjectRoots[1].RootName | Should -Be 'App2'
+            $ProjectRoots[1].RootPath | Should -Be 'C:\Dev\App2'
         }
 
         It "Returns null when path does not exist" {

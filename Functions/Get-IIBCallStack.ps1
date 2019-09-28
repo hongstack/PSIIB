@@ -90,7 +90,7 @@ function Get-AppList($AppRoot) {
     return $AppRoot | Get-ChildItem -Directory | Where {Test-Path "$($_.FullName)\.project"} | ForEach-Object {
         $App = $_
         do {
-            Get-ChildItem -Path $_.FullName -Recurse -File | ForEach-Object {
+            $_.FullName | Get-ChildItem -Recurse -File | ForEach-Object {
                 if (($_.Name -like '*.esql') -or ($_.Name -like '*.???flow')) {
                     $App
                     break
@@ -120,9 +120,9 @@ function Get-LibRefs($AppList) {
 }
 
 class CallMatch {
-    [ValidateNotNullOrEmpty()][String]$AppRoot
-    [ValidateNotNullOrEmpty()][String]$FullPath
-    [ValidateRange(0, 10)][Int32]$Depth
+    [ValidateNotNullOrEmpty()][String] $AppRoot
+    [ValidateNotNullOrEmpty()][String] $FullPath
+    [ValidateRange(0, 10)][Int32] $Depth
     [String] $AppPath # Relative path to AppRoot
     [String] $AppName
 
@@ -155,6 +155,12 @@ class FlowCallMatch : CallMatch {
 }
 
 class RoutineCallMatch : CallMatch {
+    static [String] $PTN_MODULE_DEF  = 'CREATE\s+\w+\s+MODULE\s+([\S]*)'
+    static [String] $PTN_ROUTINE_DEF = 'CREATE\s+(FUNCTION|PROCEDURE)\s+([^\s(]+)\s*\('
+    static [String] GetRoutineDefPattern($Routine) {
+        return "CREATE\s+(FUNCTION|PROCEDURE)\s+$Routine\s*\("
+    }
+
     [ValidateNotNullOrEmpty()][String] $Routine
     [ValidateNotNullOrEmpty()][String] $Line
     [Int32] $LineNumber
@@ -180,6 +186,10 @@ class RoutineCallMatch : CallMatch {
         return ('esql://routine/{0}#{1}' -f $Package, $this.Routine)
     }
 
+    [String] GetRoutineCallPatternInRoutine() {
+        return ('(?<!(FUNCTION|PROCEDURE))\s+{0}\s*\(' -f $this.Routine)
+    }
+
     [Void] Print() {
         $FileName = Split-Path $this.FullPath -Leaf
         Write-Host ('{0}{1}' -f ('    ' * $this.Depth), $this.AppPath.Replace($FileName,'')) -NoNewline
@@ -190,7 +200,7 @@ class RoutineCallMatch : CallMatch {
 }
 
 function Get-FlowCallStack($FlowName) {
-    $Script:APP_LIST | Get-ChildItem -Recurse -File -Filter "$FlowName" | ForEach-Object {
+    $Script:APP_LIST.FullName | Get-ChildItem -Recurse -File -Filter "$FlowName" | ForEach-Object {
         Get-FlowCallStackImpl -FullPath $_.FullName
     }
 }
@@ -209,11 +219,11 @@ function Get-FlowCallStackImpl($FullPath, $Depth) {
         if ($CM.IsMessageFlow()) { continue }
 
         $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-		$MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $CM.GetFlowCallPatternInFlow() -SimpleMatch -List
-		for ($i = $MatchedFiles.Count - 1; $i -ge 0; $i--) {
+		$FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetFlowCallPatternInFlow()
+		for ($i = $FoundFiles.Count - 1; $i -ge 0; $i--) {
             $Stack.Push([FlowCallMatch]::new(@{
                 AppRoot = $Script:APP_ROOT
-                FullPath = $MatchedFiles[$i].Path
+                FullPath = $FoundFiles[$i].Path
                 Depth = $CM.Depth + 1
             }))
 		}
@@ -223,7 +233,7 @@ function Get-FlowCallStackImpl($FullPath, $Depth) {
 function Get-RoutineCallStack($Routine) {
     # TODO: Exclude commented call
     $Stack = [Stack[RoutineCallMatch]]::new()
-    $Script:APP_LIST | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern "CREATE\s+(FUNCTION|PROCEDURE)\s+$Routine\s*\(" -List | ForEach-Object {
+	$Script:APP_LIST.FullName | Search-File -Filter *.esql -Pattern ([RoutineCallMatch]::GetRoutineDefPattern($Routine)) | ForEach-Object {
         $Stack.Push([RoutineCallMatch]::new(@{
             AppRoot = $Script:APP_ROOT
             FullPath = $_.Path
@@ -238,32 +248,31 @@ function Get-RoutineCallStack($Routine) {
         $CM.Print()
         if ($CM.IsMainRoutine()) {
             $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-		    $MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.*flow | Select-String -Pattern $CM.GetRoutineCallPatternInFlow() -SimpleMatch -List
-            foreach ($MatchedFile in $MatchedFiles) {
-                Get-FlowCallStackImpl -FullPath $MatchedFile.Path -Depth ($CM.Depth + 1)
+			$FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetRoutineCallPatternInFlow()
+            foreach ($File in $FoundFiles) {
+                Get-FlowCallStackImpl -FullPath $File.Path -Depth ($CM.Depth + 1)
             }
             continue
         }
 
         $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-        $Call_Pattern = '(?<!(FUNCTION|PROCEDURE))\s+{0}\s*\(' -f $CM.Routine
-        $MatchedFiles = $AppsToSearch | Get-ChildItem -Recurse -File -Filter *.esql | Select-String -Pattern $CALL_PATTERN -List
-        foreach ($MatchedFile in $MatchedFiles) {
+		$FoundFiles = $AppsToSearch | Search-File -Filter *.esql -Pattern $CM.GetRoutineCallPatternInRoutine()
+        foreach ($File in $FoundFiles) {
             $LineNum = 0
-            Get-Content -Path $MatchedFile.Path | ForEach-Object { # Loop each line
+            Get-Content -Path $File.Path | ForEach-Object { # Loop each line
                 $LineNum++
-                if ($_ -match "CREATE\s+\w+\s+MODULE\s+([\S]*)") { # Module definition
+                if ($_ -match [RoutineCallMatch]::PTN_MODULE_DEF) {
                     $CurrentModule = $Matches[1]
-                } elseif ($_ -match "CREATE\s+(FUNCTION|PROCEDURE)\s+([^\s(]+)\s*\(") { # Routine definition
+                } elseif ($_ -match [RoutineCallMatch]::PTN_ROUTINE_DEF) {
                     $CurrentRoutine = $Matches[2]
                     if ($CurrentRoutine -eq 'Main') {
                         $CurrentRoutine = "$CurrentModule.Main"
                     }
-                } elseif ($_ -match $Call_Pattern) { # Found call
+                } elseif ($_ -match $CM.GetRoutineCallPatternInRoutine()) { # Found call
                     $Stack.Push([RoutineCallMatch]::new(@{
                         AppRoot = $Script:APP_ROOT
-                        FullPath = $MatchedFile.Path
-                        Routine = $CurrentRoutine # Caller noted
+                        FullPath = $File.Path
+                        Routine = $CurrentRoutine
                         Line = $_
                         LineNumber = $LineNum
                         Depth = $CM.Depth + 1
@@ -275,13 +284,25 @@ function Get-RoutineCallStack($Routine) {
 }
 
 function Get-SearchScope($AppName) {
-    # TODO: Use the existing hashmap and also serve as cache
     $Refs = $Script:LIB_REFS[$AppName]
     $AppsToSearch = @($AppName)
     if ($null -ne $Refs) {
         $AppsToSearch += $Refs
     }
     $AppsToSearch | ForEach-Object {Join-Path -Path $Script:APP_ROOT -ChildPath $_}
+}
+
+function Search-File {
+	[CmdletBinding()]
+	Param(
+		[Parameter(Mandatory = $true, ValueFromPipeline = $true)] [String]$SearchPath,
+		[Parameter(Mandatory = $true)][String] $Filter,
+		[Parameter(Mandatory = $true)][String] $Pattern
+	)
+	
+	PROCESS {
+		$SearchPath | Get-ChildItem -Recurse -File -Filter $Filter | Select-String -Pattern $Pattern -List
+	}
 }
 
 <#
@@ -330,15 +351,18 @@ function Set-IIBRoot {
 
 <#
 .SYNOPSIS
-Returns the root directory that is associated with the specified name.
+Returns the root directory or root directories.
 
 .DESCRIPTION
-Returns the root directory that is associated with the specified name.
-The $null value is returned if the specified variable is not set, or
-the configuration does not exist at all.
+If the root name is specified, returns the root directory that is associated
+with the specified name, or $null if not set before.
+
+If the root name is not specified and there is only one direcotry set, that 
+one is returned. If the root name is not specified but there are mulitple 
+directories set, exception will be thrown.
 
 .PARAMETER RootName
-Specifies the root name that root direcotry is associated with.
+Specifies the root name that a root direcotry is associated with.
 If omitted and there is only one root directory, that one is returned.
 
 .PARAMETER ALL
@@ -377,7 +401,7 @@ function Get-IIBRoot {
             $ModuleConfig.IIBRoot.$RootName
         }
     } elseif ('ALL' -eq $PSCmdlet.ParameterSetName -and $ALL) {
-        $ModuleConfig.IIBRoot
+        $ModuleConfig.IIBRoot.PSObject.Properties | Select @{N="RootName"; E={$_.Name}}, @{N="RootPath"; E={$_.Value}}
     } else {
         $PSCmdlet.ThrowTerminatingError(
             [ErrorRecord]::new(
