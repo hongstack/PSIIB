@@ -61,7 +61,7 @@ InModuleScope PSIIB {
                 '  <name>APP_X</name>',
                 '  <projects>',
                 '    <project>APPLIB_X</project>',
-                '	</projects>',
+                '   </projects>',
                 '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
                 '<EPackage />' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
 
@@ -214,7 +214,7 @@ InModuleScope PSIIB {
             '  <name>APPLIB_X</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
-            '	</projects>',
+            '   </projects>',
             '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
             '<composition>',
             '  <nodes xmi:type="rba_lib_x_SF_Common.subflow:FCMComposite_1">',
@@ -264,7 +264,7 @@ InModuleScope PSIIB {
             '  <name>APPLIB_X</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
-            '	</projects>',
+            '   </projects>',
             '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
             'BROKER SCHEMA rba.applib.x',
             'DECLARE ... ;',
@@ -277,7 +277,7 @@ InModuleScope PSIIB {
             '  <name>APPLIB_Y</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
-            '	</projects>',
+            '   </projects>',
             '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_Y\.project"
             'BROKER SCHEMA rba.applib.y',
             'DECLARE ... ;',
@@ -291,7 +291,7 @@ InModuleScope PSIIB {
             '  <name>APP_X</name>',
             '  <projects>',
             '    <project>APPLIB_X</project>',
-            '	</projects>',
+            '   </projects>',
             '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
             'BROKER SCHEMA rba.app.x',
             'DECLARE ... ;',

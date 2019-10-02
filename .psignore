@@ -1,0 +1,3 @@
+# Files/Folders to be ignored while packaging, supports wildcard * and ?
+# .gitiggnore and .psignore are ignored by default
+*.Tests.ps1

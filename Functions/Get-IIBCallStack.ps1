@@ -34,13 +34,13 @@ Get-IIBCallStack -Resource SharedFunctionDef
 This commands will return the function call hierarchy from SharedFunctionDef.
 #>
 function Get-IIBCallStack {
-	[CmdletBinding()]
-	Param(
-		[Parameter(Position=0, Mandatory=$true)] [String]$Resource,
+    [CmdletBinding()]
+    Param(
+        [Parameter(Position=0, Mandatory=$true)] [String]$Resource,
         [Parameter(Position=1)] [String]$RootName
-	)
+    )
     
-	Init-ScriptVariables -RootName $RootName
+    Init-ScriptVariables -RootName $RootName
     if (-not $Script:APP_LIST) { return }
 
     if ($Resource -like '*.???flow') {
@@ -104,19 +104,19 @@ function Get-LibRefs($AppList) {
     if (-not $AppList) { return }
 
     $LibRefs = @{}
-	$AppList | ForEach-Object {
-		$AppName = $_.Name
-		Select-String -Path "$($_.FullName)\.project" -Pattern '<project>([^<]*)</project>' | ForEach-Object {
-			$LibName = $_.Matches.Groups[1].Value
-			$Refs = $LibRefs[$LibName]
-			if($null -eq $Refs) {
-				$Refs = [HashSet[string]]::new()
-				$LibRefs[$LibName] = $Refs
-			}
-			[void]$Refs.Add($AppName)
-		}
-	}
-	return $LibRefs
+    $AppList | ForEach-Object {
+        $AppName = $_.Name
+        Select-String -Path "$($_.FullName)\.project" -Pattern '<project>([^<]*)</project>' | ForEach-Object {
+            $LibName = $_.Matches.Groups[1].Value
+            $Refs = $LibRefs[$LibName]
+            if($null -eq $Refs) {
+                $Refs = [HashSet[string]]::new()
+                $LibRefs[$LibName] = $Refs
+            }
+            [void]$Refs.Add($AppName)
+        }
+    }
+    return $LibRefs
 }
 
 class CallMatch {
@@ -137,8 +137,8 @@ class CallMatch {
 
 class FlowCallMatch : CallMatch {
     FlowCallMatch($MatchInfo) : base($MatchInfo) {}
-	
-	[Boolean] IsMessageFlow() {
+    
+    [Boolean] IsMessageFlow() {
         return $this.FullPath.EndsWith('msgflow')
     }
 
@@ -214,26 +214,26 @@ function Get-FlowCallStackImpl($FullPath, $Depth) {
     }))
 
     while($Stack.Count -gt 0) {
-		$CM = $Stack.Pop()
+        $CM = $Stack.Pop()
         $CM.Print()
         if ($CM.IsMessageFlow()) { continue }
 
         $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-		$FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetFlowCallPatternInFlow()
-		for ($i = $FoundFiles.Count - 1; $i -ge 0; $i--) {
+        $FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetFlowCallPatternInFlow()
+        for ($i = $FoundFiles.Count - 1; $i -ge 0; $i--) {
             $Stack.Push([FlowCallMatch]::new(@{
                 AppRoot = $Script:APP_ROOT
                 FullPath = $FoundFiles[$i].Path
                 Depth = $CM.Depth + 1
             }))
-		}
-	}
+        }
+    }
 }
 
 function Get-RoutineCallStack($Routine) {
     # TODO: Exclude commented call
     $Stack = [Stack[RoutineCallMatch]]::new()
-	$Script:APP_LIST.FullName | Search-File -Filter *.esql -Pattern ([RoutineCallMatch]::GetRoutineDefPattern($Routine)) | ForEach-Object {
+    $Script:APP_LIST.FullName | Search-File -Filter *.esql -Pattern ([RoutineCallMatch]::GetRoutineDefPattern($Routine)) | ForEach-Object {
         $Stack.Push([RoutineCallMatch]::new(@{
             AppRoot = $Script:APP_ROOT
             FullPath = $_.Path
@@ -248,7 +248,7 @@ function Get-RoutineCallStack($Routine) {
         $CM.Print()
         if ($CM.IsMainRoutine()) {
             $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-			$FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetRoutineCallPatternInFlow()
+            $FoundFiles = $AppsToSearch | Search-File -Filter *.*flow -Pattern $CM.GetRoutineCallPatternInFlow()
             foreach ($File in $FoundFiles) {
                 Get-FlowCallStackImpl -FullPath $File.Path -Depth ($CM.Depth + 1)
             }
@@ -256,7 +256,7 @@ function Get-RoutineCallStack($Routine) {
         }
 
         $AppsToSearch = Get-SearchScope -AppName $CM.AppName
-		$FoundFiles = $AppsToSearch | Search-File -Filter *.esql -Pattern $CM.GetRoutineCallPatternInRoutine()
+        $FoundFiles = $AppsToSearch | Search-File -Filter *.esql -Pattern $CM.GetRoutineCallPatternInRoutine()
         foreach ($File in $FoundFiles) {
             $LineNum = 0
             Get-Content -Path $File.Path | ForEach-Object { # Loop each line
@@ -293,16 +293,16 @@ function Get-SearchScope($AppName) {
 }
 
 function Search-File {
-	[CmdletBinding()]
-	Param(
-		[Parameter(Mandatory = $true, ValueFromPipeline = $true)] [String]$SearchPath,
-		[Parameter(Mandatory = $true)][String] $Filter,
-		[Parameter(Mandatory = $true)][String] $Pattern
-	)
-	
-	PROCESS {
-		$SearchPath | Get-ChildItem -Recurse -File -Filter $Filter | Select-String -Pattern $Pattern -List
-	}
+    [CmdletBinding()]
+    Param(
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)] [String]$SearchPath,
+        [Parameter(Mandatory = $true)][String] $Filter,
+        [Parameter(Mandatory = $true)][String] $Pattern
+    )
+    
+    PROCESS {
+        $SearchPath | Get-ChildItem -Recurse -File -Filter $Filter | Select-String -Pattern $Pattern -List
+    }
 }
 
 <#
