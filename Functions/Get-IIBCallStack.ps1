@@ -113,9 +113,27 @@ function Get-LibRefs($AppList) {
                 $Refs = [HashSet[string]]::new()
                 $LibRefs[$LibName] = $Refs
             }
-            [void]$Refs.Add($AppName)
+            [Void]$Refs.Add($AppName)
         }
     }
+
+    $Stack = [Stack[String]]::new()
+    $LibRefs.Keys | ForEach-Object {
+        $Refs = $LibRefs[$_]
+        $Stack.Clear()
+        foreach($Ref in $Refs) { $Stack.Push($Ref) }
+        while ($Stack.Count -ne 0) {
+            $Current = $Stack.Pop()
+            $CurrentRefs = $LibRefs[$Current]
+            if ($null -ne $CurrentRefs) {
+                foreach($Ref in $CurrentRefs) {
+                    $Stack.Push($Ref)
+                    [Void] $Refs.Add($Ref)
+                }
+            }
+        }
+    }
+
     return $LibRefs
 }
 
@@ -284,8 +302,8 @@ function Get-RoutineCallStack($Routine) {
 }
 
 function Get-SearchScope($AppName) {
-    $Refs = $Script:LIB_REFS[$AppName]
     $AppsToSearch = @($AppName)
+    $Refs = $Script:LIB_REFS[$AppName]
     if ($null -ne $Refs) {
         $AppsToSearch += $Refs
     }

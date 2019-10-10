@@ -37,8 +37,8 @@ Install-LocalModule PSIIB
 ### Get-IIBCallStack
 The command `Get-IIBCallStack` searches and prints the call stack for the specified resource. It requires *IIBRoot* to be configured via `Set-IIBRoot`. If there is only one *IIBRoot* configured, then it is used by default when executing `Get-IIBCallStack`.
 ```PowerShell
-Get-IIBCallStack -Resource <Flor_or_Routine_Name>
-Get-IIBCallStack -Resource <Flor_or_Routine_Name> -RootName <RootName>
+Get-IIBCallStack -Resource <Flow_or_Routine_Name>
+Get-IIBCallStack -Resource <Flow_or_Routine_Name> -RootName <RootName>
 ```
 
 ### More Info

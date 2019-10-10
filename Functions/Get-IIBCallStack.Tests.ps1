@@ -64,14 +64,25 @@ InModuleScope PSIIB {
                 '   </projects>',
                 '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
                 '<EPackage />' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
+                New-Item -Path "$AppRoot\APPLIB_X\rba\applib\x" -ItemType Directory
+                '<projectDescription>',
+                '  <name>APPLIB_X</name>',
+                '  <projects>',
+                '    <project>SHLIB_X</project>',
+                '   </projects>',
+                '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
+                '<EPackage />' | Set-Content -Path "$AppRoot\APPLIB_X\rba\applib\x\SF_APPLib.subflow"
 
                 Get-IIBCallStack -RootName 'Any Name' -Resource 'Any flow or function name'
 
-                $Script:LIB_REFS.Keys | Should -HaveCount 1
-                $Script:LIB_REFS.Keys | Should -Contain 'APPLIB_X'
+                $Script:LIB_REFS.Keys | Should -HaveCount 2
+                $Script:LIB_REFS.Keys | Select -First 2 | Should -Be @('APPLIB_X', 'SHLIB_X')
 
-                $Script:LIB_REFS.Values | Should -HaveCount 1
-                $Script:LIB_REFS.Values | Select -First 1 | Should -Be 'APP_X'
+                $Script:LIB_REFS['APPLIB_X'] | Should -HaveCount 1
+                $Script:LIB_REFS['APPLIB_X'] | Select -First 1 | Should -Be 'APP_X'
+
+                $Script:LIB_REFS['SHLIB_X'] | Should -HaveCount 2
+                $Script:LIB_REFS['SHLIB_X'] | Select -First 2 | Should -Be @('APPLIB_X', 'APP_X')
             }
         }
 
