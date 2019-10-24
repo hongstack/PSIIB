@@ -105,7 +105,7 @@ InModuleScope PSIIB {
 
         Context "CallMatch class" {
             $CallMatch = [CallMatch]::new(@{
-                AppRoot  = "$AppRoot"
+                AppRoot  = "C:\fake\DIR"
                 FullPath = "$AppRoot\App1\path\file.ext"
             });
 

@@ -148,7 +148,7 @@ class CallMatch {
         $this.AppRoot  = $MatchInfo.AppRoot
         $this.FullPath = $MatchInfo.FullPath
         $this.Depth    = $MatchInfo.Depth
-        $this.AppPath  = $this.FullPath.Replace($this.AppRoot, '').Substring(1)
+        $this.AppPath  = $this.FullPath.Substring($this.AppRoot.Length + 1)
         $this.AppName  = $this.AppPath.Split('\')[0]
     }
 }
@@ -161,7 +161,7 @@ class FlowCallMatch : CallMatch {
     }
 
     [String] GetFlowCallPatternInFlow() {
-        $FileQName = $this.AppPath.Replace($this.AppName, '').SubString(1)
+        $FileQName = $this.AppPath.SubString($this.AppName.Length + 1)
         return ('xmi:type="{0}' -f ($FileQName.Replace('\', '_')))
     }
 
@@ -194,7 +194,7 @@ class RoutineCallMatch : CallMatch {
     }
 
     [String] GetRoutineCallPatternInFlow() {
-        $FileQName = $this.AppPath.Replace($this.AppName, '').SubString(1)
+        $FileQName = $this.AppPath.SubString($this.AppName.Length + 1)
         if ($FileQName.IndexOf('\') -ne -1) {
             $Package = Split-Path $FileQName -Parent
             $Package = $Package.Replace('\', '.')
