@@ -15,7 +15,7 @@
     Description = 'PSIIB provides PowerShell commands for working with IBM Integration Bus'
     PowerShellVersion = '5.1'
 
-    FunctionsToExport = @('Get-IIBCallStack', 'Set-IIBRoot', 'Get-IIBRoot')
+    FunctionsToExport = @('Set-IIBHome', 'Get-IIBHome', 'Set-IIBRoot', 'Get-IIBRoot', 'Get-IIBCallStack', 'Install-IIBApplication')
     CmdletsToExport   = @()
     VariablesToExport = '*'
     AliasesToExport   = @('iibcs')
