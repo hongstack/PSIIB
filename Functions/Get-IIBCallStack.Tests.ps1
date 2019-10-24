@@ -15,19 +15,6 @@ InModuleScope PSIIB {
                 Assert-MockCalled Get-AppList 1 -Scope It
                 $Script:APP_LIST | Should -Be $null
             }
-
-            It "Throws exception when IIB root is not defined" {
-                {Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'} | Should -Throw "No path is defined for $TestRootName"
-                Assert-MockCalled Get-AppList 0 -Scope It
-            }
-
-            It "Throws exception when IIB root does not exist" {
-                $AppRoot = 'A directory that does not exist'
-                Mock Get-IIBRoot { $AppRoot } -ParameterFilter {$RootName -eq $TestRootName}
-
-                {Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'} | Should -Throw "Path does not exist: $AppRoot"
-                Assert-MockCalled Get-AppList 0 -Scope It
-            }
         }
 
         Context "APP_LIST initialization" {
@@ -327,81 +314,6 @@ InModuleScope PSIIB {
             (-Join $Output[8..11])  | Should -Be '    APPLIB_X\rba\applib\x\APPLibX.esql:4:CALL Shared_Func(arg);'
             (-Join $Output[12..15]) | Should -Be '        APP_X\rba\app\x\APP_X.esql:5:CALL Common_Utils();'
             (-Join $Output[16..18]) | Should -Be '            APP_X\rba\app\x\MF_APP.msgflow'
-        }
-    }
-
-    Describe "getting IIBRoot" -Tags ('CallStack', 'Get-IIBRoot') {
-        It "Returns the value for the specified root name" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            '{"IIBRoot": {"App1": "C:\\Dev\\App1", "App2": "C:\\Dev\\App2"}}' | Set-Content -Path $ConfigPath
-
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            Get-IIBRoot -RootName 'App1' | Should -Be 'C:\Dev\App1'
-            Get-IIBRoot -RootName 'App2' | Should -Be 'C:\Dev\App2'
-        }
-
-        It "Returns the only value when root name not specified" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            '{"IIBRoot": {"App1": "C:\\Dev\\App1"}}' | Set-Content -Path $ConfigPath
-
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            Get-IIBRoot | Should -Be 'C:\Dev\App1'
-        }
-
-        It "Returns all the root name and paths" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            '{"IIBRoot": {"App1": "C:\\Dev\\App1", "App2": "C:\\Dev\\App2"}}' | Set-Content -Path $ConfigPath
-
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            $ProjectRoots = Get-IIBRoot -All
-            $ProjectRoots | Should -HaveCount 2
-            $ProjectRoots[0].RootName | Should -Be 'App1'
-            $ProjectRoots[0].RootPath | Should -Be 'C:\Dev\App1'
-            $ProjectRoots[1].RootName | Should -Be 'App2'
-            $ProjectRoots[1].RootPath | Should -Be 'C:\Dev\App2'
-        }
-
-        It "Returns null when path does not exist" {
-            Mock Get-ModuleConfigPath { 'A directory that does not exist' } -ModuleName PSIIB
-
-            Get-IIBRoot -RootName 'Any Name' | Should -Be $null
-        }
-
-        It "Returns null when value not set" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            '{}' | Set-Content -Path $ConfigPath
-            Get-IIBRoot | Should -Be $null
-
-            '{"IIBRoot": {}}' | Set-Content -Path $ConfigPath
-            Get-IIBRoot | Should -Be $null
-
-            '{"IIBRoot": {"App1": "C:\\Dev\\App1"}}' | Set-Content -Path $ConfigPath
-            Get-IIBRoot -RootName 'App2' | Should -Be $null
-        }
-
-        It "Throws exception when multiple paths exist and root name not specfied" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            '{"IIBRoot": {"App1": "C:\\Dev\\App1", "App2": "C:\\Dev\\App2"}}' | Set-Content -Path $ConfigPath
-
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            {Get-IIBRoot} | Should -Throw "Multiple paths exist, root name required"
-        }
-    }
-
-    Describe "setting IIBRoot" -Tags ('CallStack', 'Set-IIBRoot') {
-        It "Sets the root directory for the specified root name" {
-            $ConfigPath = Join-Path $TestDrive 'PSIIB.json'
-            Mock Get-ModuleConfigPath { $ConfigPath }
-
-            Set-IIBRoot -RootName App1 -RootPath 'C:\Dev\App1'
-            Get-IIBRoot -RootName App1 | Should -Be 'C:\Dev\App1'
-            Get-IIBRoot | Should -Be 'C:\Dev\App1'
         }
     }
 }
