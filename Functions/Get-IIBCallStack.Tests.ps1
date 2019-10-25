@@ -1,66 +1,61 @@
 InModuleScope PSIIB {
     Describe "script scope variables initialization" -Tags ('CallStack', 'Init') {
+        $TestRootName = 'IIB_Projects'
+        $TestRootPath = "$TestDrive\iib\projects"
+        Mock Get-IIBRoot { $TestRootPath } -ParameterFilter { $RootName -eq $TestRootName }
+        
         Context "APP_ROOT initialization" {
-            $TestRootName = 'IIB_Projects'
-            Mock Get-AppList {}
-
             It "Initializes APP_ROOT" {
-                $AppRoot = (New-Item -Path "TestDrive:\iib\projects" -ItemType Directory).FullName
-                Mock Get-IIBRoot { $AppRoot } -ParameterFilter { $RootName -eq $TestRootName }
+                Mock Get-AppList {} # Prevent further execution
 
                 Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'
 
-                $Script:APP_ROOT | Should -Be $AppRoot
-
-                Assert-MockCalled Get-AppList 1 -Scope It
+                $Script:APP_ROOT | Should -Be $TestRootPath
+                Assert-MockCalled Get-AppList -Times 1 -Scope It
                 $Script:APP_LIST | Should -Be $null
             }
         }
 
         Context "APP_LIST initialization" {
             It "Initializes APP_LIST" {
-                $AppRoot = (New-Item -Path "TestDrive:\iib\projects" -ItemType Directory).FullName
-                Mock Get-AppRoot { $AppRoot }
                 Mock Get-LibRefs {}
                 Mock Get-FlowCallStack {}
                 Mock Get-RoutineCallStack {}
 
-                New-Item -Path "$AppRoot\APP_X\rba\app\x" -ItemType Directory
-                '<Any Content/>' | Set-Content -Path "$AppRoot\APP_X\.project"
-                '<Any Content/>' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
+                New-Item -Path "$TestRootPath\APP_X\rba\app\x" -ItemType Directory
+                '<Any Content/>' | Set-Content -Path "$TestRootPath\APP_X\.project"
+                '<Any Content/>' | Set-Content -Path "$TestRootPath\APP_X\rba\app\x\MF_APP.msgflow"
 
-                Get-IIBCallStack -RootName 'Any Name' -Resource 'Any flow or function name'
+                Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'
 
                 $Script:APP_LIST | Should -HaveCount 1
-                $Script:APP_LIST.Name | Should -Contain 'APP_X'
+                $Script:APP_LIST | Should -Be @('APP_X')
             }
         }
 
         Context "LIB_REFS initialization" {
             It "Initializes LIB_REFS" {
-                $AppRoot = (New-Item -Path "TestDrive:\iib\projects" -ItemType Directory).FullName
-                Mock Get-AppRoot { $AppRoot }
                 Mock Get-FlowCallStack {}
                 Mock Get-RoutineCallStack {}
 
-                New-Item -Path "$AppRoot\APP_X\rba\app\x" -ItemType Directory
+                New-Item -Path "$TestRootPath\APP_X\rba\app\x" -ItemType Directory
                 '<projectDescription>',
                 '  <name>APP_X</name>',
                 '  <projects>',
                 '    <project>APPLIB_X</project>',
                 '   </projects>',
-                '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
-                '<EPackage />' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
-                New-Item -Path "$AppRoot\APPLIB_X\rba\applib\x" -ItemType Directory
+                '</projectDescription>' | Set-Content -Path "$TestRootPath\APP_X\.project"
+                '<EPackage />' | Set-Content -Path "$TestRootPath\APP_X\rba\app\x\MF_APP.msgflow"
+                New-Item -Path "$TestRootPath\APPLIB_X\rba\applib\x" -ItemType Directory
                 '<projectDescription>',
                 '  <name>APPLIB_X</name>',
                 '  <projects>',
                 '    <project>SHLIB_X</project>',
                 '   </projects>',
-                '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
-                '<EPackage />' | Set-Content -Path "$AppRoot\APPLIB_X\rba\applib\x\SF_APPLib.subflow"
+                '</projectDescription>' | Set-Content -Path "$TestRootPath\APPLIB_X\.project"
+                '<EPackage />' | Set-Content -Path "$TestRootPath\APPLIB_X\rba\applib\x\SF_APPLib.subflow"
 
-                Get-IIBCallStack -RootName 'Any Name' -Resource 'Any flow or function name'
+                Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'
 
                 $Script:LIB_REFS.Keys | Should -HaveCount 2
                 $Script:LIB_REFS.Keys | Select -First 2 | Should -Be @('APPLIB_X', 'SHLIB_X')
@@ -74,10 +69,7 @@ InModuleScope PSIIB {
         }
 
         Context "SEARCH_SCOPE determination" {
-            $AppRoot = 'C:\fake\dir'
-
-            It "Returns apps/libs to search for the specified app" {
-                Mock Get-AppRoot {$AppRoot}
+            It "Gets apps/libs to search for the specified app" {
                 Mock Get-AppList {}
                 Mock Get-LibRefs {
                     @{
@@ -86,154 +78,60 @@ InModuleScope PSIIB {
                     }
                 }
 
-                Get-IIBCallStack -RootName 'Any Name' -Resource 'Any flow or function name'
+                Get-IIBCallStack -RootName $TestRootName -Resource 'Any flow or function name'
 
                 Get-SearchScope APPLIB_X | Should -HaveCount 2
-                Get-SearchScope APPLIB_X | Should -Be @("$AppRoot\APPLIB_X", "$AppRoot\APP_X")
+                Get-SearchScope APPLIB_X | Should -Be @("$TestRootPath\APPLIB_X", "$TestRootPath\APP_X")
 
                 Get-SearchScope APPLIB_Y | Should -HaveCount 3
-                Get-SearchScope APPLIB_Y | Should -Be @("$AppRoot\APPLIB_Y", "$AppRoot\APP_X", "$AppRoot\APP_Y")
+                Get-SearchScope APPLIB_Y | Should -Be @("$TestRootPath\APPLIB_Y", "$TestRootPath\APP_X", "$TestRootPath\APP_Y")
 
                 Get-SearchScope APPLIB_Z | Should -HaveCount 1
-                Get-SearchScope APPLIB_Z | Should -Be @("$AppRoot\APPLIB_Z")
-            }
-        }
-    }
-
-    Describe "call match class" -Tags ('CallStack', 'CallMatch') {
-        $AppRoot = 'C:\fake\dir'
-
-        Context "CallMatch class" {
-            $CallMatch = [CallMatch]::new(@{
-                AppRoot  = "C:\fake\DIR"
-                FullPath = "$AppRoot\App1\path\file.ext"
-            });
-
-            It "Extracts valid relative path" {
-                $CallMatch.AppPath | Should -Be 'App1\path\file.ext'
-            }
-
-            It "Extracts valid app name" {
-                $CallMatch.AppName | Should -Be 'App1'
-            }
-
-            It "Returns default depth of zero" {
-                $CallMatch.Depth | Should -Be 0
-            }
-        }
-
-        Context "FlowCallMatch class" {
-            $FlowCallMatch = [FlowCallMatch]::new(@{
-                AppRoot  = "$AppRoot"
-                FullPath = "$AppRoot\App1\path\file.msgflow"
-                Depth   = 3
-            })
-
-            It "Detects the flow type" {
-                $FlowCallMatch.IsMessageFlow() | Should -BeTrue
-            }
-
-            It "Returns the given depth" {
-                $FlowCallMatch.Depth | Should -Be 3
-            }
-
-            It "Returns flow call pattern in message flow" {
-                $FlowCallMatch.GetFlowCallPatternInFlow() | Should -Be 'xmi:type="path_file.msgflow'
-            }
-        }
-
-        Context "RoutineCallMatch class" {
-            It "Defines module definition pattern" {
-                [RoutineCallMatch]::PTN_MODULE_DEF | Should -BeExactly 'CREATE\s+\w+\s+MODULE\s+([\S]*)'
-            }
-
-            It "Defines rutine definition pattern" {
-                [RoutineCallMatch]::PTN_ROUTINE_DEF | Should -BeExactly 'CREATE\s+(FUNCTION|PROCEDURE)\s+([^\s(]+)\s*\('
-                $RoutineName = 'Any Name'
-                [RoutineCallMatch]::GetRoutineDefPattern($RoutineName) | Should -BeExactly "CREATE\s+(FUNCTION|PROCEDURE)\s+$RoutineName\s*\("
-            }
-            
-            It "Returns correct match info" {
-                $RoutineCallMatch = [RoutineCallMatch]::new(@{
-                    AppRoot  = "$AppRoot"
-                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
-                    Routine = 'MyFunc'
-                    Line = 'CREATE FUNCTION MyFunc (IN param CHARACTER)'
-                    LineNumber = '100'
-                })
-
-                $RoutineCallMatch.Routine    | Should -Be 'MyFunc'
-                $RoutineCallMatch.Line       | Should -BeLike '*MyFunc*'
-                $RoutineCallMatch.LineNumber | Should -Be 100
-                $RoutineCallMatch.IsMainRoutine() | Should -Be $False
-            }
-
-            It "Returns routine call pattern in message flow" {
-                $RoutineCallMatch = [RoutineCallMatch]::new(@{
-                    AppRoot  = "$AppRoot"
-                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
-                    Routine = 'MyModule.Main'
-                    Line = 'CREATE FUNCTION Main () RETURNS BOOLEAN'
-                    LineNumber = '100'
-                })
-
-                $RoutineCallMatch.IsMainRoutine() | Should -Be $True
-                $RoutineCallMatch.GetRoutineCallPatternInFlow() | Should -BeExactly 'esql://routine/rba.app.x#MyModule.Main'
-            }
-
-            It "Returns routine call pattern in routine" {
-                $RoutineCallMatch = [RoutineCallMatch]::new(@{
-                    AppRoot  = "$AppRoot"
-                    FullPath = "$AppRoot\APP_X\rba\app\x\APP_X.esql"
-                    Routine = 'MyFunc'
-                    Line = 'CREATE FUNCTION MyFunc (IN param CHARACTER)'
-                    LineNumber = '100'
-                })
-
-                $RoutineCallMatch.GetRoutineCallPatternInRoutine() | Should -BeExactly '(?<!(FUNCTION|PROCEDURE))\s+MyFunc\s*\('
+                Get-SearchScope APPLIB_Z | Should -Be @("$TestRootPath\APPLIB_Z")
             }
         }
     }
 
     Describe "message flow call stack" -Tags ('CallStack', 'FlowCallStack'){
         It "Should print flow call stack" {
-            $AppRoot = (New-Item -Path "TestDrive:\iib\projects" -ItemType Directory).FullName
-            Mock Get-AppRoot { $AppRoot }
+            $TestRootName = 'IIB_Projects'
+            $TestRootPath = "$TestDrive\iib\projects"
+            Mock Get-IIBRoot { $TestRootPath } -ParameterFilter { $RootName -eq $TestRootName }
 
-            New-Item -Path "$AppRoot\SHLIB_X\rba\lib\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\SHLIB_X\rba\lib\x" -ItemType Directory
             '<projectDescription>',
             '  <name>SHLIB_X</name>',
             '  <projects/>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\SHLIB_X\.project"
-            '<EPackage />' | Set-Content -Path "$AppRoot\SHLIB_X\rba\lib\x\SF_Common.subflow"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\SHLIB_X\.project"
+            '<EPackage />' | Set-Content -Path "$TestRootPath\SHLIB_X\rba\lib\x\SF_Common.subflow"
 
-            New-Item -Path "$AppRoot\APPLIB_X\rba\applib\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\APPLIB_X\rba\applib\x" -ItemType Directory
             '<projectDescription>',
             '  <name>APPLIB_X</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
             '   </projects>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\APPLIB_X\.project"
             '<composition>',
             '  <nodes xmi:type="rba_lib_x_SF_Common.subflow:FCMComposite_1">',
             '    <translation any_attributes/>',
             '  </nodes>',
-            '</composition>' | Set-Content -Path "$AppRoot\APPLIB_X\rba\applib\x\SF_APPLib.subflow"
+            '</composition>' | Set-Content -Path "$TestRootPath\APPLIB_X\rba\applib\x\SF_APPLib.subflow"
 
-            New-Item -Path "$AppRoot\APP_X\rba\app\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\APP_X\rba\app\x" -ItemType Directory
             '<projectDescription>',
             '  <name>APP_X</name>',
             '  <projects>',
             '    <project>APPLIB_X</project>',
             '  </projects>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\APP_X\.project"
             '<composition>',
             '  <nodes xmi:type="rba_applib_x_SF_APPLib.subflow:FCMComposite_1">',
             '    <translation any_attributes/>',
             '  </nodes>',
-            '</composition>' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
+            '</composition>' | Set-Content -Path "$TestRootPath\APP_X\rba\app\x\MF_APP.msgflow"
 
-            $Output = (Get-IIBCallStack -RootName 'Any Name' -Resource 'SF_Common.subflow' 6>&1)
+            $Output = (Get-IIBCallStack -RootName $TestRootName -Resource 'SF_Common.subflow' 6>&1)
 
             $Output | Should -HaveCount 6
             -Join $Output[0,1] | Should -Be 'SHLIB_X\rba\lib\x\SF_Common.subflow'
@@ -244,53 +142,54 @@ InModuleScope PSIIB {
 
     Describe "routine call stack" -Tags ('CallStack', 'EsqlCallStack') {
         It "Should print routine call stack" {
-            $AppRoot = (New-Item -Path "TestDrive:\iib\projects" -ItemType Directory).FullName
-            Mock Get-AppRoot { $AppRoot }
+            $TestRootName = 'IIB_Projects'
+            $TestRootPath = "$TestDrive\iib\projects"
+            Mock Get-IIBRoot { $TestRootPath } -ParameterFilter { $RootName -eq $TestRootName }
 
-            New-Item -Path "$AppRoot\SHLIB_X\rba\lib\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\SHLIB_X\rba\lib\x" -ItemType Directory
             '<projectDescription>',
             '  <name>SHLIB_X</name>',
             '  <projects/>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\SHLIB_X\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\SHLIB_X\.project"
             'BROKER SCHEMA rba.lib.x',
             'DECLARE ... ;',
             'CREATE FUNCTION Shared_Func(IN p CHARACTER) RETURNS CHARACTER',
-            'BEGIN ... END;' | Set-Content -Path "$AppRoot\SHLIB_X\rba\lib\x\SharedLibX.esql"
+            'BEGIN ... END;' | Set-Content -Path "$TestRootPath\SHLIB_X\rba\lib\x\SharedLibX.esql"
 
-            New-Item -Path "$AppRoot\APPLIB_X\rba\applib\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\APPLIB_X\rba\applib\x" -ItemType Directory
             '<projectDescription>',
             '  <name>APPLIB_X</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
             '   </projects>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_X\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\APPLIB_X\.project"
             'BROKER SCHEMA rba.applib.x',
             'DECLARE ... ;',
             'CREATE PROCEDURE Common_Utils() BEGIN',
             '  CALL Shared_Func(arg);',
-            'END;' | Set-Content -Path "$AppRoot\APPLIB_X\rba\applib\x\APPLibX.esql"
+            'END;' | Set-Content -Path "$TestRootPath\APPLIB_X\rba\applib\x\APPLibX.esql"
 
-            New-Item -Path "$AppRoot\APPLIB_Y\rba\applib\y" -ItemType Directory
+            New-Item -Path "$TestRootPath\APPLIB_Y\rba\applib\y" -ItemType Directory
             '<projectDescription>',
             '  <name>APPLIB_Y</name>',
             '  <projects>',
             '    <project>SHLIB_X</project>',
             '   </projects>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\APPLIB_Y\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\APPLIB_Y\.project"
             'BROKER SCHEMA rba.applib.y',
             'DECLARE ... ;',
             'CREATE PROCEDURE Func_Utils() BEGIN',
             '  DECLARE out Character;',
             '  SET out = Shared_Func(arg).toUpperCase();',
-            'END;' | Set-Content -Path "$AppRoot\APPLIB_Y\rba\applib\y\APPLibY.esql"
+            'END;' | Set-Content -Path "$TestRootPath\APPLIB_Y\rba\applib\y\APPLibY.esql"
 
-            New-Item -Path "$AppRoot\APP_X\rba\app\x" -ItemType Directory
+            New-Item -Path "$TestRootPath\APP_X\rba\app\x" -ItemType Directory
             '<projectDescription>',
             '  <name>APP_X</name>',
             '  <projects>',
             '    <project>APPLIB_X</project>',
             '   </projects>',
-            '</projectDescription>' | Set-Content -Path "$AppRoot\APP_X\.project"
+            '</projectDescription>' | Set-Content -Path "$TestRootPath\APP_X\.project"
             'BROKER SCHEMA rba.app.x',
             'DECLARE ... ;',
             'CREATE DATABASE MODULE Test',
@@ -298,15 +197,15 @@ InModuleScope PSIIB {
             '  CALL Common_Utils();',
             '  RETURN TRUE;',
             'END;',
-            'END MODULE;' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\APP_X.esql"
+            'END MODULE;' | Set-Content -Path "$TestRootPath\APP_X\rba\app\x\APP_X.esql"
 
             '<composition>',
             '  <nodes statement="esql://routine/rba.app.x#Test.Main">',
             '    <translation any_attributes/>',
             '  </nodes>',
-            '</composition>' | Set-Content -Path "$AppRoot\APP_X\rba\app\x\MF_APP.msgflow"
+            '</composition>' | Set-Content -Path "$TestRootPath\APP_X\rba\app\x\MF_APP.msgflow"
 
-            $Output = (Get-IIBCallStack -RootName 'Any Name' -Resource 'Shared_Func' 6>&1)
+            $Output = (Get-IIBCallStack -RootName $TestRootName -Resource 'Shared_Func' 6>&1)
             
             $Output | Should -HaveCount 18
             (-Join $Output[0..3])   | Should -Be 'SHLIB_X\rba\lib\x\SharedLibX.esql:3:CREATE FUNCTION Shared_Func(IN p CHARACTER) RETURNS CHARACTER'
