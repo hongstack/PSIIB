@@ -1,4 +1,45 @@
+<#
+.SYNOPSIS
+Installs IIB application to the specified node and server, from the given location.
 
+.DESCRIPTION
+The Install-IIBApplication creates new BAR file and deploys it onto IIB server. 
+
+It starts with resolving the required dependencies and deploying them first if 
+they are not available on IIB server, recusively.
+
+.PARAMETER AppName
+Specifies the application name that to be installed.
+
+.PARAMETER RootName
+Specifies the root name that is set via Set-IIBRoot.
+If omitted and there is only one root directory, that one is used.
+
+.PARAMETER Exclusive
+Specifies whether to remove irrelavant applications and libraries.
+
+.PARAMETER FlowMonitoring
+Specifies whether to enable flow monitoring on the target IIB server.
+
+.PARAMETER Node
+Specifies the target IIB node, defaults to "TESTNODE_$env:USERNAME".
+
+.PARAMETER Server
+Specifies the target IIB server, defaults to "default".
+
+.Example
+Install-IIBApplication App1
+
+Install the application [App1] onto default IIB node and server, from the default 
+root location assuming there is one IIB root configured via Set-IIBRoot.
+
+.Example
+Install-IIBApplication App1 Root1 -Exclusive -FlowMonitoring -Node TestNode
+
+Install the application [App1] onto IIB TestNode and default server, from the location 
+defined by Root1. This command also remove libraries and applications not related to 
+[App1] and enables the flow monitoring after the installation.
+#>
 function Install-IIBApplication {
     [CmdletBinding()]
     Param(
@@ -7,6 +48,12 @@ function Install-IIBApplication {
 
         [Parameter(Position=1)]
         [String] $RootName,
+        
+        [Parameter()]
+        [Switch] $Exclusive,
+        
+        [Parameter()]
+        [Switch] $FlowMonitoring,
 
         [Parameter()]
         [Alias('Broker')]
@@ -18,37 +65,54 @@ function Install-IIBApplication {
     )
 
     BEGIN {
-        $RootLocation = Get-AppRoot -RootName $RootName
         # TODO Start IIB Node and Server if not running
+        $RootLocation = Get-IIBRoot -RootName $RootName
         $DeployedResources = Get-IIBDeployedResources -Node $Node -Server $Server
         $DeployedApps = $DeployedResources[0]
         $DeployedLibs = $DeployedResources[1]
+        $ProcessedApps = @()
+        $ProcessedLibs = @()
     }
-
     PROCESS {
-        $AppDescriptor = $RootLocation | Join-Path -ChildPath $AppName | Join-Path -ChildPath 'application.descriptor'
-        if (Test-Path $AppDescriptor) {
-            $NameSpace = @{ns1="http://com.ibm.etools.mft.descriptor.base"}
-            $Libs = (Select-Xml -Path $AppDescriptor -XPath '//ns1:libraryName' -Namespace $NameSpace).Node.InnerXml
-            $Libs.where{$DeployedLibs -notcontains $_} | New-IIBBarFile -RootLocation $RootLocation | Install-IIBResource -Node $Node -Server $Server
-            $DeployedLibs = $DeployedLibs.where{$Libs -notcontains $_}
+        $Descriptor = $RootLocation | Join-Path -ChildPath $AppName | Join-Path -ChildPath 'application.descriptor'
+        if (Test-Path -Path $Descriptor) {
+            $NS = @{ns1="http://com.ibm.etools.mft.descriptor.base"}
+            $Libs = (Select-Xml -Path $Descriptor -XPath '//ns1:libraryName' -Namespace $NS).Node.InnerXml
+            
+            $NewLibs = $Libs.where{$DeployedLibs -notcontains $_}
+            if ($NewLibs.Count -gt 0) {
+                $NewLibs | New-IIBBarFile -RootLocation $RootLocation | Install-IIBResource -Node $Node -Server $Server
+                $DeployedLibs  += $NewLibs
+                $ProcessedLibs += $NewLibs
+            }
+            
+            $AppName  | New-IIBBarFile -RootLocation $RootLocation | Install-IIBResource -Node $Node -Server $Server
+            $ProcessedApps += $AppName
+        } else {
+            Write-Error -Message "$AppName is not an IIB application" -Category InvalidArgument
         }
-        $AppName  | New-IIBBarFile -RootLocation $RootLocation | Install-IIBResource -Node $Node -Server $Server
-        $DeployedApps = $DeployedApps.where{$_ -ne $AppName}
     }
-
     END {
-        $DeployedApps | UnInstall-IIBResource -Node $Node -Server $Server
-        $DeployedLibs | UnInstall-IIBResource -Node $Node -Server $Server
-        Enable-IIBFlowMonitoring -Node $Node -Server $Server
+        if ($Exclusive) {
+            $DeployedApps.where{$ProcessedApps -notcontains $_} | UnInstall-IIBResource -Node $Node -Server $Server
+            $DeployedLibs.where{$ProcessedLibs -notcontains $_} | UnInstall-IIBResource -Node $Node -Server $Server
+        }
+        if ($FlowMonitoring) {
+            Enable-IIBFlowMonitoring -Node $Node -Server $Server
+        }
     }
 }
 
 function Get-IIBDeployedResources {
     [CmdletBinding()]
     Param(
-        [Parameter()] [Alias('Broker')] [String] $Node = "TESTNODE_$env:USERNAME",
-        [Parameter()] [Alias('EG')] [String] $Server = 'default'
+        [Parameter()]
+        [Alias('Broker')]
+        [String] $Node = "TESTNODE_$env:USERNAME",
+
+        [Parameter()]
+        [Alias('EG')]
+        [String] $Server = 'default'
     )
     
     $Apps = @()
@@ -66,14 +130,22 @@ function Get-IIBDeployedResources {
 function New-IIBBarFile {
     [CmdletBinding()]
     Param(
-        [Parameter(Position=0, Mandatory=$true, ValueFromPipeline = $true)] [String] $Resource,
-        [Parameter(Position=1, Mandatory=$true)] [String] $RootLocation,
-        [Parameter()] [String] $BarLocation = $env:TEMP
+        [Parameter(Position=0, Mandatory=$true, ValueFromPipeline = $true)]
+        [String] $Resource,
+
+        [Parameter(Position=1, Mandatory=$true)]
+        [String] $RootLocation,
+
+        [Parameter()]
+        [String] $BarLocation = $env:TEMP
     )
 
     PROCESS {
-        $BarFullName = Join-Path -Path $BarLocation -ChildPath "$Resource.bar"
+        $BarFileName = "$Resource.bar"
+        Write-Host "Creating BAR file [$BarFileName]" -ForegroundColor Cyan
+        $BarFullName = Join-Path -Path $BarLocation -ChildPath $BarFileName
         "mqsipackagebar -w $RootLocation -a $BarFullName -k $Resource" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+        Write-Host "Created  BAR file [$BarFileName]" -ForegroundColor Cyan
         $BarFullName
     }
 }
@@ -84,15 +156,20 @@ function Install-IIBResource {
         [Parameter(Position=0, Mandatory=$true, ValueFromPipeline = $true)]
         [String] $BarFullName,
 
-        [Parameter()] [Alias('Broker')]
+        [Parameter()]
+        [Alias('Broker')]
         [String] $Node = "TESTNODE_$env:USERNAME",
 
-        [Parameter()] [Alias('EG')]
+        [Parameter()]
+        [Alias('EG')]
         [String] $Server = 'default'
     )
 
     PROCESS {
+        $BarFileName = Split-Path $BarFullName -Leaf
+        Write-Host "Installing [$BarFileName] onto $Server@$Node" -ForegroundColor Cyan
         "mqsideploy $Node -e $Server -a $BarFullName" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+        Write-Host "Installed  [$BarFileName] onto $Server@$Node" -ForegroundColor Cyan
     }
 }
 
@@ -102,38 +179,74 @@ function UnInstall-IIBResource {
         [Parameter(Position=0, Mandatory=$true, ValueFromPipeline = $true)]
         [String] $Resource,
 
-        [Parameter()] [Alias('Broker')]
+        [Parameter()]
+        [Alias('Broker')]
         [String] $Node = "TESTNODE_$env:USERNAME",
 
-        [Parameter()] [Alias('EG')]
+        [Parameter()]
+        [Alias('EG')]
         [String] $Server = 'default'
     )
 
     PROCESS {
+        Write-Host "UnInstalling [$Resource] from $Server@$Node" -ForegroundColor Cyan
         "mqsideploy $Node -e $Server -d $Resource" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+        Write-Host "UnInstalled  [$Resource] from $Server@$Node" -ForegroundColor Cyan
     }
 }
 
+<#
+.SYNOPSIS
+Enables the monitoring of message flows on IIB node and server.
+
+.DESCRIPTION
+Enables the monitoring of message flows on IIB node and server.
+
+.PARAMETER Node
+Specifies the target IIB node, defaults to "TESTNODE_$env:USERNAME".
+
+.PARAMETER Server
+Specifies the target IIB server, defaults to "default".
+#>
 function Enable-IIBFlowMonitoring {
     [CmdletBinding()]
     Param(
-        [Parameter()] [Alias('Broker')]
+        [Parameter()]
+        [Alias('Broker')]
         [String] $Node = "TESTNODE_$env:USERNAME",
 
-        [Parameter()] [Alias('EG')]
+        [Parameter()]
+        [Alias('EG')]
         [String] $Server = 'default'
     )
 
+    Write-Host "Enabling flow monitoring on $Server@$Node" -ForegroundColor Cyan
     "mqsichangeflowmonitoring $Node -e $Server -c active -j" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+    Write-Host "Enabled  flow monitoring on $Server@$Node" -ForegroundColor Cyan
 }
 
+<#
+.SYNOPSIS
+Reports the monitoring of message flows on IIB node and server.
+
+.DESCRIPTION
+Reports the monitoring of message flows on IIB node and server.
+
+.PARAMETER Node
+Specifies the target IIB node, defaults to "TESTNODE_$env:USERNAME".
+
+.PARAMETER Server
+Specifies the target IIB server, defaults to "default".
+#>
 function Get-IIBFlowMonitoring {
     [CmdletBinding()]
     Param(
-        [Parameter()] [Alias('Broker')]
+        [Parameter()]
+        [Alias('Broker')]
         [String] $Node = "TESTNODE_$env:USERNAME",
 
-        [Parameter()] [Alias('EG')]
+        [Parameter()]
+        [Alias('EG')]
         [String] $Server = 'default'
     )
 
@@ -155,7 +268,8 @@ function Invoke-IIBCommand {
         $Result = & $env:ComSpec /C "@set IIB_BANNER=1 & $IIB_HOME\iib.cmd $IIBCmd"
         if ($LASTEXITCODE -ne 0) {   
             Write-Error -Message ($Result -join "`n") -Category InvalidOperation
+        } else {
+            $Result.where{-not [String]::IsNullOrWhiteSpace($_)}
         }
-        $Result.where{-not [String]::IsNullOrWhiteSpace($_)}
     }
 }
