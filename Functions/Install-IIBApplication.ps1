@@ -65,7 +65,7 @@ function Install-IIBApplication {
     )
 
     BEGIN {
-        # TODO Start IIB Node and Server if not running
+        Start-IIB -Node $Node -Server $Server
         $RootLocation = Get-IIBRoot -RootName $RootName
         $DeployedResources = Get-IIBDeployedResources -Node $Node -Server $Server
         $DeployedApps = $DeployedResources[0]
@@ -101,6 +101,120 @@ function Install-IIBApplication {
             Enable-IIBFlowMonitoring -Node $Node -Server $Server
         }
     }
+}
+
+<#
+.SYNOPSIS
+Gets the running status of IIB node and server.
+
+.DESCRIPTION
+The following value is returned to indicate the status of IIB node and server.
+ 0 - both IIB node and server are running
+ 1 - IIB node is stopped
+ 2 - IIB node is running but IIB server is stopped
+-1 - Unknown error occurred
+
+.PARAMETER Node
+Specifies the target IIB node, defaults to "TESTNODE_$env:USERNAME".
+
+.PARAMETER Server
+Specifies the target IIB server, defaults to "default".
+#>
+function Get-IIBStatus {
+    [CmdletBinding()]
+    [OutputType([Int])]
+    Param(
+        [Parameter()]
+        [Alias('Broker')]
+        [String] $Node = "TESTNODE_$env:USERNAME",
+
+        [Parameter()]
+        [Alias('EG')]
+        [String] $Server = 'default'
+    )
+
+    $Result = "mqsireportproperties $Node -e $Server -o ExecutionGroup -a" | Invoke-IIBCommand -ErrorVariable ErrMsg -ErrorAction SilentlyContinue
+
+    if ($ErrMsg.Count -eq 0) {
+        0
+        $Result | ForEach-Object { Write-Verbose $_ }
+    } elseif ($ErrMsg -like 'BIP8019E:*') { # IIB Node stopped
+        1
+        $ErrMsg | ForEach-Object { Write-Verbose $_ }
+    } elseif ($ErrMsg -like 'BIP2851E:*') { # IIB Server stopped
+        2
+        $ErrMsg | ForEach-Object { Write-Verbose $_ }
+    } else {
+        -1
+        $ErrMsg | ForEach-Object { Write-Error $_ }
+    }
+}
+
+<#
+.SYNOPSIS
+Starts IIB node and/or server.
+
+.DESCRIPTION
+This command will start IIB node and IIB server if they are not running.
+There is no action if both of IIB node and server are started.
+
+.PARAMETER Node
+Specifies the target IIB node, defaults to "TESTNODE_$env:USERNAME".
+
+.PARAMETER Server
+Specifies the target IIB server, defaults to "default".
+#>
+function Start-IIB {
+    [CmdletBinding()]
+    Param(
+        [Parameter()]
+        [Alias('Broker')]
+        [String] $Node = "TESTNODE_$env:USERNAME",
+
+        [Parameter()]
+        [Alias('EG')]
+        [String] $Server = 'default'
+    )
+
+    $Status = Get-IIBStatus -Node $Node -Server $Server
+    if ($Status -eq 1) {
+        Start-IIBNode -Node $Node
+        $Status = Get-IIBStatus -Node $Node -Server $Server
+    }
+
+    if ($Status -eq 2) {
+        Start-IIBServer -Node $Node -Server $Server
+    }
+}
+
+function Start-IIBNode {
+    [CmdletBinding()]
+    Param(
+        [Parameter()]
+        [Alias('Broker')]
+        [String] $Node = "TESTNODE_$env:USERNAME"
+    )
+
+    Write-Host "Starting IIB Node [$Node]" -ForegroundColor Cyan
+    "mqsistart $Node" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+    Write-Host "Started  IIB Node [$Node]" -ForegroundColor Cyan
+}
+
+function Start-IIBServer {
+    [CmdletBinding()]
+    Param(
+        [Parameter()]
+        [Alias('Broker')]
+        [String] $Node = "TESTNODE_$env:USERNAME",
+
+        [Parameter()]
+        [Alias('EG')]
+        [String] $Server = 'default'
+    )
+
+    Write-Host "Starting IIB Server [$Server@$Node]" -ForegroundColor Cyan
+    "mqsistartmsgflow $Node -e $Server" | Invoke-IIBCommand | ForEach-Object { Write-Verbose $_ }
+    Write-Host "Started  IIB Server [$Server@$Node]" -ForegroundColor Cyan
 }
 
 function Get-IIBDeployedResources {

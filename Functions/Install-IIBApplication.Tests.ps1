@@ -87,6 +87,7 @@ InModuleScope PSIIB {
     Describe "IIB application installation" -Tags ('Deployment', 'AppInst') {
         $RootPath = "$TestDrive\iib\projects"
         Mock Get-IIBRoot { $RootPath }
+        Mock Start-IIB {}
         Mock Get-IIBDeployedResources {
             @('App1', 'App2'),
             @('Lib1', 'Lib2')
